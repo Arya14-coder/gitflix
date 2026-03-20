@@ -9,7 +9,6 @@ interface RepoCardProps {
   description: string;
   language: string | null;
   stars: number;
-  matchScore: number;
   ownerAvatar: string;
   htmlUrl: string;
 }
@@ -19,7 +18,6 @@ export default function RepoCard({
   description,
   language,
   stars,
-  matchScore,
   ownerAvatar,
   htmlUrl,
 }: RepoCardProps) {
@@ -30,12 +28,6 @@ export default function RepoCard({
     return count.toString();
   };
 
-  const getMatchScoreColor = (score: number) => {
-    const percentage = score * 100;
-    if (percentage > 85) return "text-green-500 bg-green-500/10 border-green-500/20";
-    if (percentage >= 60) return "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
-    return "text-gray-400 bg-gray-400/10 border-gray-400/20";
-  };
 
   const langColor = getLanguageColor(language);
 
@@ -52,10 +44,6 @@ export default function RepoCard({
               {language || "Unknown"}
             </span>
           </div>
-          
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${getMatchScoreColor(matchScore)}`}>
-            {Math.round(matchScore * 100)}% match
-          </span>
         </div>
 
         <div className="flex items-center gap-3 mb-2">

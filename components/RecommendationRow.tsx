@@ -23,7 +23,6 @@ export default function RecommendationRow({ row }: RecommendationRowProps) {
               description={repo.description || ""}
               language={repo.language}
               stars={repo.stargazers_count}
-              matchScore={repo.similarityScore || 0}
               ownerAvatar={repo.owner.avatar_url}
               htmlUrl={`https://github.com/${repo.full_name}`}
             />
