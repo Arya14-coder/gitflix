@@ -49,7 +49,8 @@ async function handleApiError(response: Response) {
  * Fetch a user's GitHub profile. Hard-errors on failure.
  */
 export async function fetchUserProfile(username: string, signal?: AbortSignal): Promise<GitHubUser> {
-  const response = await fetch(`${GITHUB_API_URL}/users/${username}`, {
+  const sanitized = encodeURIComponent(username);
+  const response = await fetch(`${GITHUB_API_URL}/users/${sanitized}`, {
     headers: getHeaders(),
     signal,
   });
@@ -66,12 +67,13 @@ export async function fetchUserProfile(username: string, signal?: AbortSignal): 
  * Returns partial results if rate limit is hit mid-loop.
  */
 export async function fetchStarredRepos(username: string, signal?: AbortSignal): Promise<GitHubRepository[]> {
+  const sanitized = encodeURIComponent(username);
   const allStarred: GitHubRepository[] = [];
   let page = 1;
   const per_page = 100;
   
   while (page <= 3) {
-    const response = await fetch(`${GITHUB_API_URL}/users/${username}/starred?per_page=${per_page}&page=${page}`, {
+    const response = await fetch(`${GITHUB_API_URL}/users/${sanitized}/starred?per_page=${per_page}&page=${page}`, {
       headers: getHeaders(),
       signal,
     });
@@ -99,7 +101,8 @@ export async function fetchStarredRepos(username: string, signal?: AbortSignal):
  * Fetch owned repositories.
  */
 export async function fetchOwnedRepos(username: string, signal?: AbortSignal): Promise<GitHubRepository[]> {
-  const response = await fetch(`${GITHUB_API_URL}/users/${username}/repos?per_page=100&sort=pushed&direction=desc`, {
+  const sanitized = encodeURIComponent(username);
+  const response = await fetch(`${GITHUB_API_URL}/users/${sanitized}/repos?per_page=100&sort=pushed&direction=desc`, {
     headers: getHeaders(),
     signal,
   });

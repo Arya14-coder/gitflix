@@ -15,7 +15,7 @@ const redis = new Redis({
 });
 
 const CACHE_TTL_SECONDS = 600; // 10 minutes
-const REQUEST_TIMEOUT_MS = 8000; // 8 seconds
+const REQUEST_TIMEOUT_MS = 25000; // 25 seconds
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,8 +24,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Username is required" }, { status: 400 });
     }
 
+    const sanitizedUsername = encodeURIComponent(username);
+    const cacheKey = `recommendations:${sanitizedUsername.toLowerCase()}`;
+
     // 1. Check Cache
-    const cacheKey = `recommendations:${username.toLowerCase()}`;
     const cachedData = await redis.get(cacheKey);
     if (cachedData) {
       return NextResponse.json(cachedData);
@@ -38,21 +40,21 @@ export async function POST(req: NextRequest) {
     try {
       // 3. Fetch Data with Timeout
       const [user, starred, owned] = await Promise.all([
-        fetchUserProfile(username, controller.signal),
-        fetchStarredRepos(username, controller.signal),
-        fetchOwnedRepos(username, controller.signal),
+        fetchUserProfile(sanitizedUsername, controller.signal),
+        fetchStarredRepos(sanitizedUsername, controller.signal),
+        fetchOwnedRepos(sanitizedUsername, controller.signal),
       ]);
 
       const topLanguages = await calculateLanguageWeights(owned, controller.signal);
       
-      const rows = await getRecommendations({
+      const { rows, coldStart } = await getRecommendations({
         user,
         stars: starred,
         owned,
         topLanguages
       }, controller.signal);
 
-      const result = { user, languages: topLanguages, rows };
+      const result = { user, languages: topLanguages, rows, coldStart };
 
       // 4. Cache full results
       await redis.set(cacheKey, result, { ex: CACHE_TTL_SECONDS });
@@ -62,8 +64,8 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         return NextResponse.json({ 
-          error: "Request timed out after 8s",
-          details: "GitHub or OpenAI taking too long. Please try again."
+          error: "Request timed out after 25s",
+          details: "GitHub or OpenAI taking too long. Heavy profiles may need a second attempt."
         }, { status: 504 });
       }
 

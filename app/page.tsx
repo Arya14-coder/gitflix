@@ -16,6 +16,7 @@ export default function Home() {
   const [languages, setLanguages] = useState<LanguageWeights | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationRowType[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isColdStart, setIsColdStart] = useState(false);
 
   const addToast = (message: string, type: ToastMessage["type"] = "error") => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -26,13 +27,6 @@ export default function Home() {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  const hasFewStars = useMemo(() => {
-    // If we have recommendations but the first row title indicates a fallback or empty
-    // But better: the API should return if user has few stars
-    // We'll rely on our logic: recommendations will be "Trending" only if < 5 stars
-    return user && recommendations.length === 1 && recommendations[0].title === "Trending in your stack";
-  }, [user, recommendations]);
 
   const handleSearch = async (username: string) => {
     setLoading(true);
@@ -47,7 +41,7 @@ export default function Home() {
       if (!response.ok) {
         const err = await response.json();
         if (response.status === 429) {
-          addToast("GitHub Rate Limit hit! Add a personal GITHUB_TOKEN to .env.local to increase limits.");
+          addToast("GitHub Rate Limit hit! Add a personal GITHUB_TOKEN to increase limits.");
         }
         throw new Error(err.error || err.message || "Failed to fetch data");
       }
@@ -56,6 +50,7 @@ export default function Home() {
       setUser(data.user);
       setLanguages(data.languages);
       setRecommendations(data.rows);
+      setIsColdStart(data.coldStart || false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
@@ -70,15 +65,20 @@ export default function Home() {
       
       {!user && !loading && !error && (
         <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 text-center">
-          <div className="w-20 h-20 bg-[#7c3aed]/10 rounded-3xl flex items-center justify-center mb-6 border border-[#7c3aed]/20">
-            <span className="text-4xl text-[#7c3aed]">🎬</span>
+          <div className="w-20 h-20 bg-[#7c3aed]/15 rounded-3xl flex items-center justify-center mb-8 border border-[#7c3aed]/30 shadow-[0_0_40px_rgba(124,58,237,0.15)] animate-bounce-subtle">
+            <span className="text-4xl">🎬</span>
           </div>
-          <h1 className="text-4xl font-bold mb-4 tracking-tight">
-            Discover Your Next Favorite Project
+          <h1 className="text-5xl font-extrabold mb-6 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-gray-500">
+            Welcome to GitFlix
           </h1>
-          <p className="text-gray-500 mb-8 max-w-md">
-            You haven&apos;t starred enough repositories yet. Explore GitHub to get personalized recommendations!
+          <p className="text-gray-400 mb-10 max-w-lg text-lg leading-relaxed">
+            The personalized discovery engine for developers. Enter your GitHub username above to find your next great project to contribute to.
           </p>
+          <div className="flex gap-4 items-center text-sm text-gray-500">
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Vector Matching</span>
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Hidden Gems</span>
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Smart Filters</span>
+          </div>
         </div>
       )}
 
@@ -99,12 +99,13 @@ export default function Home() {
 
       {error && !loading && (
         <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-          <div className="text-red-500 bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20 mb-4">
-            {error}
+          <div className="text-red-500 bg-red-500/10 px-6 py-4 rounded-xl border border-red-500/20 mb-6 max-w-md">
+            <p className="font-semibold mb-1">Search Failed</p>
+            <p className="text-sm opacity-80">{error}</p>
           </div>
           <button 
             onClick={() => { setUser(null); setError(null); }}
-            className="text-gray-400 hover:text-white transition-colors underline underline-offset-4"
+            className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-full text-sm font-medium transition-all border border-white/10"
           >
             Try another username
           </button>
@@ -112,14 +113,15 @@ export default function Home() {
       )}
 
       {user && languages && !loading && (
-        <div className="animate-in fade-in duration-700">
+        <div className="animate-in fade-in duration-1000">
           <Hero user={user} languages={languages} />
           
           <div className="pb-20">
-            {hasFewStars && (
-              <div className="px-6 py-4 mb-6 mx-6 bg-[#7c3aed]/5 border border-[#7c3aed]/20 rounded-xl text-center">
-                <p className="text-gray-400 text-sm">
-                  <span className="text-[#7c3aed] font-bold">Cold Start:</span> No stars yet — start exploring GitHub! We&apos;ve recommended some trending projects for you instead.
+            {isColdStart && (
+              <div className="px-6 py-4 mb-8 mx-6 bg-[#7c3aed]/10 border border-[#7c3aed]/20 rounded-2xl text-center shadow-[0_0_30px_rgba(124,58,237,0.05)]">
+                <p className="text-gray-300 text-sm">
+                  <span className="text-[#a78bfa] font-bold uppercase tracking-wider text-xs mr-2">Cold Start</span>
+                  It looks like you haven&apos;t starred many repositories yet! We&apos;ve curated some trending projects for you to explore.
                 </p>
               </div>
             )}
@@ -129,8 +131,12 @@ export default function Home() {
                 <RecommendationRow key={i} row={row} />
               ))
             ) : (
-              <div className="px-6 py-20 text-center text-gray-500">
-                No recommendations found. Try starring more repositories!
+              <div className="flex flex-col items-center justify-center py-32 px-6 text-center">
+                <div className="text-4xl mb-4">🔍</div>
+                <h3 className="text-xl font-semibold mb-2">No recommendations found</h3>
+                <p className="text-gray-500 max-w-xs">
+                  We couldn&apos;t find any matches based on your profile. Try starring more repositories on GitHub!
+                </p>
               </div>
             )}
           </div>
