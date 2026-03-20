@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import RecommendationRow from "@/components/RecommendationRow";
@@ -17,6 +17,7 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState<RecommendationRowType[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isColdStart, setIsColdStart] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const addToast = (message: string, type: ToastMessage["type"] = "error") => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -29,6 +30,13 @@ export default function Home() {
   };
 
   const handleSearch = async (username: string) => {
+    // Abort any in-flight request to prevent race conditions
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
@@ -36,6 +44,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -52,6 +61,8 @@ export default function Home() {
       setRecommendations(data.rows);
       setIsColdStart(data.coldStart || false);
     } catch (err: unknown) {
+      // Silently ignore aborted requests — they're intentional
+      if (err instanceof DOMException && err.name === "AbortError") return;
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
     } finally {

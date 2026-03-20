@@ -14,7 +14,7 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
 
-const CACHE_TTL_SECONDS = 600; // 10 minutes
+const CACHE_TTL_SECONDS = 86400; // 24 hours
 const REQUEST_TIMEOUT_MS = 25000; // 25 seconds
 
 export async function POST(req: NextRequest) {
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       if (err instanceof Error && err.name === "AbortError") {
         return NextResponse.json({ 
           error: "Request timed out after 25s",
-          details: "GitHub or OpenAI taking too long. Heavy profiles may need a second attempt."
+          details: "GitHub or OpenRouter taking too long. Heavy profiles may need a second attempt."
         }, { status: 504 });
       }
 

@@ -1,7 +1,21 @@
 import { GitHubUser, GitHubRepository, LanguageWeights } from "@/types/github";
+import { Redis } from "@upstash/redis";
 
 const GITHUB_API_URL = "https://api.github.com";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const LANG_CACHE_TTL = 7 * 24 * 60 * 60; // 7 days
+
+// Lazy Redis initialization
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+  return _redis;
+}
 
 /**
  * Returns Authorization header if GITHUB_TOKEN is set, otherwise empty object.
@@ -134,20 +148,52 @@ export async function fetchLanguagesForRepo(owner: string, repo: string, signal?
 /**
  * Calculate language weights based strictly on the top 50 repos.
  * GitHub returns repos sorted by 'pushed' by default, so this targets recent activity.
+ * Uses Redis caching (keyed by repo.full_name) to avoid redundant GitHub API calls.
  */
 export async function calculateLanguageWeights(repos: GitHubRepository[], signal?: AbortSignal): Promise<LanguageWeights> {
   const topRepos = repos.slice(0, 50);
   const languageTotals: Record<string, number> = {};
   let overallBytes = 0;
 
-  const languagePromises = topRepos.map(repo => 
-    fetchLanguagesForRepo(repo.owner.login, repo.name, signal)
-      .catch(() => ({})) // Gracefully handle individual failures per repo
-  );
+  const redis = getRedis();
 
-  const results = await Promise.all(languagePromises);
+  // 1. Bulk-check cache for language data
+  const cacheKeys = topRepos.map(r => `lang:${r.full_name}`);
+  const cachedValues = await redis.mget<(Record<string, number> | null)[]>(...cacheKeys);
 
-  results.forEach(data => {
+  const toFetch: GitHubRepository[] = [];
+  const cachedResults: Record<string, number>[] = [];
+
+  cachedValues.forEach((val, idx) => {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      cachedResults.push(val);
+    } else {
+      toFetch.push(topRepos[idx]);
+    }
+  });
+
+  // 2. Fetch uncached repos from GitHub (with graceful per-repo fallback)
+  const fetchedResults: Record<string, number>[] = [];
+  if (toFetch.length > 0) {
+    const languagePromises = toFetch.map(repo =>
+      fetchLanguagesForRepo(repo.owner.login, repo.name, signal)
+        .catch(() => ({})) // Gracefully handle individual failures per repo
+    );
+    const fetched = await Promise.all(languagePromises);
+
+    // 3. Pipeline-set fetched results into Redis
+    const pipeline = redis.pipeline();
+    fetched.forEach((data, idx) => {
+      pipeline.set(`lang:${toFetch[idx].full_name}`, data, { ex: LANG_CACHE_TTL });
+      fetchedResults.push(data);
+    });
+    await pipeline.exec();
+  }
+
+  // 4. Merge all results
+  const allResults = [...cachedResults, ...fetchedResults];
+
+  allResults.forEach(data => {
     Object.entries(data).forEach(([lang, bytes]) => {
       languageTotals[lang] = (languageTotals[lang] || 0) + bytes;
       overallBytes += bytes;
