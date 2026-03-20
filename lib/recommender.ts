@@ -34,12 +34,10 @@ function getRedis() {
   return _redis;
 }
 
-// Re-using the header helper from github.ts conceptually or importing it
-// For simplicity and to avoid circular deps if they exist, I'll local-redefine or import
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 function getGitHubHeaders(): HeadersInit {
-  return GITHUB_TOKEN 
-    ? { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+  const token = process.env.GITHUB_TOKEN;
+  return token 
+    ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json" }
     : { Accept: "application/vnd.github.v3+json" };
 }
 
@@ -119,18 +117,24 @@ export async function getRecommendations(
   context: RecommendationContext, 
   signal?: AbortSignal
 ): Promise<{ rows: RecommendationRow[], coldStart: boolean }> {
-  const { stars, owned } = context;
+  const { stars, owned, topLanguages } = context;
 
-  // Cold Start Check
-  if (stars.length < 5) {
-    const trendingRow = await getTrendingInYourStack(owned, signal);
-    return { 
-      rows: trendingRow.repos.length > 0 ? [trendingRow] : [], 
-      coldStart: true 
-    };
+  // 0. Derive Top Language from pre-computed weights (passed from route.ts)
+  const userTopLang = (topLanguages && Object.keys(topLanguages)[0]) || "TypeScript";
+
+  // 1. Cold Start Check
+  const coldStart = stars.length < 5;
+  if (coldStart) {
+    const [popular, underrated] = await Promise.all([
+      getPopularInStack(userTopLang, signal),
+      getUnderratedGems(userTopLang, signal)
+    ]);
+    
+    const rows = [popular, underrated].filter(r => r.repos.length > 0);
+    return { rows, coldStart: true };
   }
 
-  // Calculate User Profile Vector
+  // 2. Full Recommendation Flow (Embedding-based)
   const embeddings = await getBatchEmbeddings(stars, signal);
   let profileVector: number[] | null = null;
   let totalWeight = 0;
@@ -154,99 +158,141 @@ export async function getRecommendations(
     profileVector = profileVector.map(v => v / totalWeight);
   }
 
-  const rows: RecommendationRow[] = [];
+  const rowPromises: Promise<RecommendationRow | null>[] = [];
 
-  // 1. "Because you starred X"
+  // A. "Because you starred X"
   if (stars.length > 0) {
     const anchor = stars[0];
     const anchorEmbed = embeddings.get(anchor.full_name);
     if (anchorEmbed) {
-      const candidates = await fetchTrendingForSimilaritySearch(anchor.language || "TypeScript", signal);
-      if (candidates.length > 0) {
+      rowPromises.push(
+        fetchTrendingForSimilaritySearch(anchor.language || "TypeScript", signal).then(async (candidates) => {
+          if (candidates.length === 0) return null;
+          const candEmbeds = await getBatchEmbeddings(candidates, signal);
+          const similar = candidates
+            .map(c => ({
+              ...c,
+              similarityScore: candEmbeds.has(c.full_name) 
+                ? cosineSimilarity(anchorEmbed, candEmbeds.get(c.full_name)!) 
+                : 0
+            }))
+            .filter(c => c.full_name !== anchor.full_name)
+            .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
+            .slice(0, 10);
+          return similar.length > 0 ? { title: `Because you starred ${anchor.name}`, repos: similar } : null;
+        })
+      );
+    }
+  }
+
+  // B. "Trending in your stack"
+  rowPromises.push(getTrendingInYourStack(userTopLang, signal));
+
+  // C. "Hidden Gems"
+  if (profileVector) {
+    const pVector = profileVector;
+    rowPromises.push(
+      fetchHiddenGemsCandidates(signal).then(async (candidates) => {
+        if (candidates.length === 0) return null;
         const candEmbeds = await getBatchEmbeddings(candidates, signal);
-        const similar = candidates
+        const gems = candidates
           .map(c => ({
             ...c,
             similarityScore: candEmbeds.has(c.full_name) 
-              ? cosineSimilarity(anchorEmbed, candEmbeds.get(c.full_name)!) 
+              ? cosineSimilarity(pVector, candEmbeds.get(c.full_name)!) 
               : 0
           }))
-          .filter(c => c.full_name !== anchor.full_name)
+          .filter(c => (c.similarityScore || 0) > 0.55 && c.stargazers_count < 2000)
           .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
           .slice(0, 10);
-
-        if (similar.length > 0) {
-          rows.push({ title: `Because you starred ${anchor.name}`, repos: similar });
-        }
-      }
-    }
+        return gems.length > 0 ? { title: "Hidden Gems", repos: gems } : null;
+      })
+    );
   }
 
-  // 2. "Hidden Gems"
+  // D. "New & Noteworthy" (Embedding-based)
   if (profileVector) {
-    const candidates = await fetchHiddenGemsCandidates(signal);
-    if (candidates.length > 0) {
-      const candEmbeds = await getBatchEmbeddings(candidates, signal);
-      const pVector = profileVector;
-
-      const gems = candidates
-        .map(c => ({
-          ...c,
-          similarityScore: candEmbeds.has(c.full_name) 
-            ? cosineSimilarity(pVector, candEmbeds.get(c.full_name)!) 
-            : 0
-        }))
-        .filter(c => (c.similarityScore || 0) > 0.78 && c.stargazers_count < 500)
-        .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
-        .slice(0, 10);
-
-      if (gems.length > 0) {
-        rows.push({ title: "Hidden Gems", repos: gems });
-      }
-    }
+    const pVector = profileVector;
+    rowPromises.push(
+      fetchNewAndNoteworthyCandidates(signal).then(async (candidates) => {
+        if (candidates.length === 0) return null;
+        const candEmbeds = await getBatchEmbeddings(candidates, signal);
+        const noteworthy = candidates
+          .map(c => ({
+            ...c,
+            similarityScore: candEmbeds.has(c.full_name) 
+              ? cosineSimilarity(pVector, candEmbeds.get(c.full_name)!) 
+              : 0
+          }))
+          .filter(c => (c.similarityScore || 0) > 0.55)
+          .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
+          .slice(0, 10);
+        return noteworthy.length > 0 ? { title: "New & Noteworthy", repos: noteworthy } : null;
+      })
+    );
   }
 
-  // 3. "Trending in your stack"
-  const trendingStack = await getTrendingInYourStack(owned, signal);
-  if (trendingStack.repos.length > 0) {
-    rows.push(trendingStack);
-  }
+  // E. "Popular in your stack" (Always returns results)
+  rowPromises.push(getPopularInStack(userTopLang, signal));
+
+  // F. "Underrated Gems in {userTopLang}"
+  rowPromises.push(getUnderratedGems(userTopLang, signal));
+
+  const resolvedRows = await Promise.all(rowPromises);
+  const rows = resolvedRows.filter((r): r is RecommendationRow => r !== null && r.repos.length > 0);
 
   return { rows, coldStart: false };
 }
 
-async function getTrendingInYourStack(owned: GitHubRepository[], signal?: AbortSignal): Promise<RecommendationRow> {
-  const topLang = owned[0]?.language || "TypeScript";
-  const url = `https://api.github.com/search/repositories?q=language:${topLang}+stars:>500&sort=stars&order=desc&per_page=10`;
-  
-  const response = await fetch(url, {
-    headers: getGitHubHeaders(),
-    signal,
-  });
-  
+async function getTrendingInYourStack(topLang: string, signal?: AbortSignal): Promise<RecommendationRow> {
+  const url = `https://api.github.com/search/repositories?q=language:${topLang}+stars:>500&sort=updated&order=desc&per_page=10`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
   if (!response.ok) return { title: "Trending in your stack", repos: [] };
-  
   const data = await response.json();
   return { title: "Trending in your stack", repos: data.items || [] };
 }
 
+async function getPopularInStack(topLang: string, signal?: AbortSignal): Promise<RecommendationRow> {
+  const url = `https://api.github.com/search/repositories?q=language:${topLang}+stars:>1000&sort=stars&order=desc&per_page=10`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
+  if (!response.ok) return { title: "Popular in your stack", repos: [] };
+  const data = await response.json();
+  return { title: "Popular in your stack", repos: data.items || [] };
+}
+
+async function getUnderratedGems(topLang: string, signal?: AbortSignal): Promise<RecommendationRow> {
+  const url = `https://api.github.com/search/repositories?q=language:${topLang}+stars:50..500&sort=updated&order=desc&per_page=10`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
+  if (!response.ok) return { title: `Underrated Gems in ${topLang}`, repos: [] };
+  const data = await response.json();
+  return { title: `Underrated Gems in ${topLang}`, repos: data.items || [] };
+}
+
 async function fetchTrendingForSimilaritySearch(lang: string, signal?: AbortSignal): Promise<GitHubRepository[]> {
   const url = `https://api.github.com/search/repositories?q=language:${lang}+stars:>1000&sort=stars&order=desc&per_page=30`;
-  const response = await fetch(url, { 
-    headers: getGitHubHeaders(),
-    signal 
-  });
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
   if (!response.ok) return [];
   const data = await response.json();
   return data.items || [];
 }
 
 async function fetchHiddenGemsCandidates(signal?: AbortSignal): Promise<GitHubRepository[]> {
-  const url = `https://api.github.com/search/repositories?q=stars:50..500+pushed:>2024-01-01&sort=updated&order=desc&per_page=50`;
-  const response = await fetch(url, { 
-    headers: getGitHubHeaders(),
-    signal 
-  });
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const dateStr = sixMonthsAgo.toISOString().split('T')[0];
+  const url = `https://api.github.com/search/repositories?q=stars:50..500+pushed:>${dateStr}&sort=updated&order=desc&per_page=50`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.items || [];
+}
+
+async function fetchNewAndNoteworthyCandidates(signal?: AbortSignal): Promise<GitHubRepository[]> {
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const dateStr = sixMonthsAgo.toISOString().split('T')[0];
+  const url = `https://api.github.com/search/repositories?q=created:>${dateStr}+stars:>100&sort=stars&order=desc&per_page=50`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
   if (!response.ok) return [];
   const data = await response.json();
   return data.items || [];

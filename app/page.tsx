@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import RecommendationRow from "@/components/RecommendationRow";
@@ -128,7 +128,7 @@ export default function Home() {
 
             {recommendations.length > 0 ? (
               recommendations.map((row, i) => (
-                <RecommendationRow key={i} row={row} />
+                <RecommendationRow key={row.title} row={row} />
               ))
             ) : (
               <div className="flex flex-col items-center justify-center py-32 px-6 text-center">

@@ -21,6 +21,7 @@ export interface GitHubRepository {
   languages_url: string;
   stargazers_count: number;
   language: string | null;
+  created_at?: string;
 }
 
 export type LanguageWeights = Record<string, number>;

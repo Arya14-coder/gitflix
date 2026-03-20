@@ -40,9 +40,9 @@ export async function POST(req: NextRequest) {
     try {
       // 3. Fetch Data with Timeout
       const [user, starred, owned] = await Promise.all([
-        fetchUserProfile(sanitizedUsername, controller.signal),
-        fetchStarredRepos(sanitizedUsername, controller.signal),
-        fetchOwnedRepos(sanitizedUsername, controller.signal),
+        fetchUserProfile(username, controller.signal),
+        fetchStarredRepos(username, controller.signal),
+        fetchOwnedRepos(username, controller.signal),
       ]);
 
       const topLanguages = await calculateLanguageWeights(owned, controller.signal);
