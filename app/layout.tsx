@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import Footer from "@/components/Footer";
@@ -14,12 +14,30 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#0d0d0d",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export const metadata: Metadata = {
-  title: "GitFlix — GitHub, but Netflix",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://gitflix.vercel.app'),
+  title: {
+    default: "GitFlix — GitHub, but Netflix",
+    template: "%s | GitFlix",
+  },
   description: "Personalized GitHub repository recommendations in an addictive Netflix-style interface.",
+  keywords: ["GitHub", "Recommendations", "Netflix clone", "Developer tools", "Open source discovery"],
+  authors: [{ name: "GitFlix" }],
+  creator: "GitFlix",
   openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "/",
     title: "GitFlix — GitHub, but Netflix",
     description: "Discover your next favorite repository with AI-powered recommendations.",
+    siteName: "GitFlix",
     images: [
       {
         url: "/og.png",
@@ -28,6 +46,16 @@ export const metadata: Metadata = {
         alt: "GitFlix Interface Preview",
       },
     ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GitFlix — GitHub, but Netflix",
+    description: "Discover your next favorite repository with AI-powered recommendations.",
+    images: ["/og.png"],
+  },
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
   },
 };
 

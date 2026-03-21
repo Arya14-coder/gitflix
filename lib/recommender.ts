@@ -202,7 +202,7 @@ export async function getRecommendations(
               ? cosineSimilarity(pVector, candEmbeds.get(c.full_name)!) 
               : 0
           }))
-          .filter(c => (c.similarityScore || 0) > 0.55 && c.stargazers_count < 2000)
+          .filter(c => (c.similarityScore || 0) > 0.45 && c.stargazers_count < 2000)
           .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
           .slice(0, 10);
         return gems.length > 0 ? { title: "Hidden Gems", repos: gems } : null;
@@ -224,7 +224,7 @@ export async function getRecommendations(
               ? cosineSimilarity(pVector, candEmbeds.get(c.full_name)!) 
               : 0
           }))
-          .filter(c => (c.similarityScore || 0) > 0.55)
+          .filter(c => (c.similarityScore || 0) > 0.45)
           .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
           .slice(0, 10);
         return noteworthy.length > 0 ? { title: "New & Noteworthy", repos: noteworthy } : null;
@@ -241,7 +241,31 @@ export async function getRecommendations(
   const resolvedRows = await Promise.all(rowPromises);
   const rows = resolvedRows.filter((r): r is RecommendationRow => r !== null && r.repos.length > 0);
 
-  return { rows, coldStart: false };
+  // Guarantee a minimum of 3 rows — add a "Trending this week" fallback if needed
+  if (rows.length < 3) {
+    const fallback = await getTrendingThisWeek(signal);
+    if (fallback.repos.length > 0) rows.push(fallback);
+  }
+
+  // Deduplicate repos across all rows by repo.id
+  const seen = new Set<number>();
+  const dedupedRows = rows.map(row => ({
+    ...row,
+    repos: row.repos.filter(r => !seen.has(r.id) && seen.add(r.id))
+  })).filter(r => r.repos.length > 0);
+
+  return { rows: dedupedRows, coldStart: false };
+}
+
+async function getTrendingThisWeek(signal?: AbortSignal): Promise<RecommendationRow> {
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const dateStr = oneWeekAgo.toISOString().split('T')[0];
+  const url = `https://api.github.com/search/repositories?q=stars:>5000+pushed:>${dateStr}&sort=updated&order=desc&per_page=10`;
+  const response = await fetch(url, { headers: getGitHubHeaders(), signal });
+  if (!response.ok) return { title: "Trending this week", repos: [] };
+  const data = await response.json();
+  return { title: "Trending this week", repos: data.items || [] };
 }
 
 async function getTrendingInYourStack(topLang: string, signal?: AbortSignal): Promise<RecommendationRow> {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Star, ExternalLink } from "lucide-react";
 import Image from "next/image";
 import { getLanguageColor } from "@/lib/constants/languageColors";
@@ -21,13 +22,14 @@ export default function RepoCard({
   ownerAvatar,
   htmlUrl,
 }: RepoCardProps) {
+  const [avatarError, setAvatarError] = useState(false);
+
   const formatStars = (count: number) => {
     if (count >= 1000) {
       return (count / 1000).toFixed(1) + "k";
     }
     return count.toString();
   };
-
 
   const langColor = getLanguageColor(language);
 
@@ -48,12 +50,19 @@ export default function RepoCard({
 
         <div className="flex items-center gap-3 mb-2">
           <div className="relative w-6 h-6 rounded-md overflow-hidden bg-white/10 flex-shrink-0">
-            <Image
-              src={ownerAvatar}
-              alt={name}
-              fill
-              className="object-cover"
-            />
+            {avatarError ? (
+              <div className="w-full h-full flex items-center justify-center bg-[#7c3aed]/20 text-[#a78bfa] text-xs font-bold">
+                {name.charAt(0).toUpperCase()}
+              </div>
+            ) : (
+              <Image
+                src={ownerAvatar}
+                alt={name}
+                fill
+                className="object-cover"
+                onError={() => setAvatarError(true)}
+              />
+            )}
           </div>
           <h3 className="text-lg font-bold text-white truncate group-hover:text-[#7c3aed] transition-colors">
             {name}

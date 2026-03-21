@@ -161,39 +161,39 @@ export async function calculateLanguageWeights(repos: GitHubRepository[], signal
   const cacheKeys = topRepos.map(r => `lang:${r.full_name}`);
   const cachedValues = await redis.mget<(Record<string, number> | null)[]>(...cacheKeys);
 
-  const toFetch: GitHubRepository[] = [];
-  const cachedResults: Record<string, number>[] = [];
+  // Use a positional array to preserve repo→data correspondence
+  const allResults: Record<string, number>[] = new Array(topRepos.length);
+  const toFetch: { repo: GitHubRepository; index: number }[] = [];
 
   cachedValues.forEach((val, idx) => {
     if (val && typeof val === "object" && !Array.isArray(val)) {
-      cachedResults.push(val);
+      allResults[idx] = val;
     } else {
-      toFetch.push(topRepos[idx]);
+      toFetch.push({ repo: topRepos[idx], index: idx });
     }
   });
 
   // 2. Fetch uncached repos from GitHub (with graceful per-repo fallback)
-  const fetchedResults: Record<string, number>[] = [];
   if (toFetch.length > 0) {
-    const languagePromises = toFetch.map(repo =>
+    const languagePromises = toFetch.map(({ repo }) =>
       fetchLanguagesForRepo(repo.owner.login, repo.name, signal)
         .catch(() => ({})) // Gracefully handle individual failures per repo
     );
     const fetched = await Promise.all(languagePromises);
 
-    // 3. Pipeline-set fetched results into Redis
+    // 3. Pipeline-set fetched results into Redis, slot into positional array
     const pipeline = redis.pipeline();
-    fetched.forEach((data, idx) => {
-      pipeline.set(`lang:${toFetch[idx].full_name}`, data, { ex: LANG_CACHE_TTL });
-      fetchedResults.push(data);
+    fetched.forEach((data, i) => {
+      const { repo, index } = toFetch[i];
+      pipeline.set(`lang:${repo.full_name}`, data, { ex: LANG_CACHE_TTL });
+      allResults[index] = data;
     });
     await pipeline.exec();
   }
 
-  // 4. Merge all results
-  const allResults = [...cachedResults, ...fetchedResults];
-
+  // 4. Aggregate language totals
   allResults.forEach(data => {
+    if (!data) return;
     Object.entries(data).forEach(([lang, bytes]) => {
       languageTotals[lang] = (languageTotals[lang] || 0) + bytes;
       overallBytes += bytes;

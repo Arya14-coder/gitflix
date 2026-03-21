@@ -15,6 +15,9 @@ const redis = new Redis({
 });
 
 const CACHE_TTL_SECONDS = 86400; // 24 hours
+// TODO: For power users (300+ stars, cold cache), the full pipeline can approach
+// Vercel's 30s limit. Consider streaming rows to the client as they resolve,
+// or splitting language weight calculation into a separate pre-cache endpoint.
 const REQUEST_TIMEOUT_MS = 25000; // 25 seconds
 
 export async function POST(req: NextRequest) {
