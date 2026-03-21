@@ -5,7 +5,7 @@
   
   **GitHub, but Netflix. Discover your next favorite repository with AI-powered recommendations.**
 
-  [**Live Demo**](https://gitflix.vercel.app)
+  [**Live Demo**](https://gitflix-blue.vercel.app/)
 </div>
 
 
