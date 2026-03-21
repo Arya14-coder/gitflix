@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./public/og.png" alt="GitFlix Banner" width="100%" />
+  <img src="./public/image.png" alt="GitFlix Banner" width="100%" />
   
   # 🍿 GitFlix
   
@@ -8,7 +8,8 @@
   [**Live Demo**](https://gitflix.vercel.app)
 </div>
 
-![GitFlix Demo](https://via.placeholder.com/800x450.png?text=Demo+GIF+Placeholder)
+![GitFlix UI](./public/screenshot.png)
+
 
 ## ✨ What is GitFlix?
 
@@ -26,10 +27,10 @@ Instead of infinitely scrolling GitHub's trending page, GitFlix uses your GitHub
 
 ## 🛠️ Tech Stack
 
-- **Framework:** [Next.js 15](https://nextjs.org/) (App Router)
+- **Framework:** [Next.js 16](https://nextjs.org/) (App Router)
 - **Styling:** [Tailwind CSS](https://tailwindcss.com/)
 - **Icons:** [Lucide React](https://lucide.dev/)
-- **AI / Recommendations:** [OpenAI API](https://openai.com/)
+- **AI / Recommendations:** [OpenRouter](https://openrouter.ai/) (using OpenAI SDK)
 - **Caching:** [Upstash Redis](https://upstash.com/)
 - **Testing:** [Playwright](https://playwright.dev/)
 
@@ -39,7 +40,7 @@ Instead of infinitely scrolling GitHub's trending page, GitFlix uses your GitHub
 
 - Node.js 18+ and npm / yarn / pnpm
 - A GitHub Personal Access Token (for increased API limits)
-- An OpenAI API Key (for the recommendation engine)
+- An OpenRouter API Key (provides access to OpenAI models)
 - Upstash Redis credentials (for caching)
 
 ### Installation
@@ -65,8 +66,8 @@ Instead of infinitely scrolling GitHub's trending page, GitFlix uses your GitHub
    # GitHub (Increase API rate limits)
    GITHUB_TOKEN=your_github_personal_access_token
    
-   # OpenAI (For AI recommendations)
-   OPENAI_API_KEY=your_openai_api_key
+   # OpenRouter (For AI recommendations)
+   OPENROUTER_API_KEY=your_openrouter_api_key
    
    # Upstash Redis (For caching)
    UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
