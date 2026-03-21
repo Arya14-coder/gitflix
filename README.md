@@ -8,7 +8,6 @@
   [**Live Demo**](https://gitflix.vercel.app)
 </div>
 
-![GitFlix UI](./public/screenshot.png)
 
 
 ## ✨ What is GitFlix?
