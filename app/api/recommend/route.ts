@@ -60,7 +60,9 @@ export async function POST(req: NextRequest) {
       const result = { user, languages: topLanguages, rows, coldStart };
 
       // 4. Cache full results
-      await redis.set(cacheKey, result, { ex: CACHE_TTL_SECONDS });
+      // Use a much shorter TTL for cold starts (5 mins) so users who go star repos aren't stuck for 24 hours
+      const ttl = coldStart ? 300 : CACHE_TTL_SECONDS;
+      await redis.set(cacheKey, result, { ex: ttl });
 
       return NextResponse.json(result);
 
